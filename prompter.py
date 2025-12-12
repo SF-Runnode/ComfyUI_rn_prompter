@@ -9,9 +9,6 @@ import base64
 
 
 
-baseurl = get_config().get('base_url', '')
-
-
 def get_config():
     try:
         # 修改配置文件路径为新的配置文件
@@ -82,6 +79,9 @@ def save_config(config):
                 
     except Exception as e:
         print(f"Error saving config: {e}")
+
+
+baseurl = get_config().get('base_url', '')
 
 
 def encode_image_b64(ref_image):
