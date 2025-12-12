@@ -735,7 +735,7 @@ class RN_LLMAPI_Pro_Node():
     FUNCTION = "rn_run_llmapi_pro"
     CATEGORY = "RunNode/rn_prompter"
 
-    def rn_run_llmapi_pro(self, api_baseurl, api_key, model, role, prompt, temperature, seed, ref_image=None):
+    def rn_run_llmapi_pro(self, model, role, prompt, temperature, seed, api_baseurl='', api_key='', ref_image=None):
         cfg = get_config()
         # used_api_baseurl = (api_baseurl or env_api_baseurl or cfg.get("base_url") or "https://ai.t8star.cn//v1")
         used_api_baseurl = (api_baseurl or cfg.get("base_url"))
