@@ -13,14 +13,14 @@ def get_config():
     try:
         # 修改配置文件路径为新的配置文件
         config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
-                                  'ComfyUI_RN_External_Interface-config.json')
+                                  'ComfyUI_rn_translator-config.json')
         
         with open(config_path, 'r', encoding='utf-8') as f:  
             config = json.load(f)
         
         # 从llm部分获取当前provider的配置
         llm_config = config.get('llm', {})
-        current_provider = llm_config.get('current_provider', 'deepseek')
+        current_provider = llm_config.get('current_provider', 'quchi')
         providers = llm_config.get('providers', {})
         
         # 获取当前provider的配置
