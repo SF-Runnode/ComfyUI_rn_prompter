@@ -12,8 +12,16 @@ import base64
 def get_config():
     try:
         # 修改配置文件路径为新的配置文件
-        config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
-                                  'ComfyUI_rn_translator-config.json')
+        config_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
         
         with open(config_path, 'r', encoding='utf-8') as f:  
             config = json.load(f)
@@ -776,10 +784,10 @@ class RN_LLMAPI_Pro_Node():
             "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
             "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
-            "glm-4-9b-chat": "THUDM/glm-4-9b-chat",
-            "GLM-4-32B-0414": "THUDM/GLM-4-32B-0414",
-            "GLM-4.1V-9B-Thinking": "THUDM/GLM-4.1V-9B-Thinking",
-            "GLM-4.6": "THUDM/GLM-4.6",
+            "glm-4-9b-chat": "glm-4-9b-chat",
+            "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
+            "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
+            "GLM-4.6": "ZhipuAI/GLM-4.6",
             "bge-m3": "BAAI/bge-m3",
             "bge-reranker-v2-m3": "BAAI/bge-reranker-v2-m3",
         }
