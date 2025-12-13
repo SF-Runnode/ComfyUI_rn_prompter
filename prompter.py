@@ -81,6 +81,30 @@ def save_config(config):
         print(f"Error saving config: {e}")
 
 
+def get_vllm_config():
+    try:
+        config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
+                                  'ComfyUI_rn_translator-config.json')
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        vllm_config = config.get('vllm', {})
+        current_provider = vllm_config.get('current_provider', 'quchi')
+        providers = vllm_config.get('providers', {})
+        if current_provider in providers:
+            provider_config = providers[current_provider]
+            return {
+                'api_key': provider_config.get('api_key', ''),
+                'model': provider_config.get('model', ''),
+                'base_url': provider_config.get('base_url', ''),
+                'temperature': provider_config.get('temperature', 0.7),
+                'max_tokens': provider_config.get('max_tokens', 1000),
+                'top_p': provider_config.get('top_p', 0.9)
+            }
+        return {}
+    except Exception:
+        return {}
+
+
 baseurl = get_config().get('base_url', '')
 
 
@@ -169,7 +193,7 @@ class RN_Translator():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "comfyui_rn_translator-config.json")
+        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -317,7 +341,7 @@ class RN_Prompt_Translator():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "comfyui_rn_translator-config.json")
+        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -466,7 +490,7 @@ class RN_Midjourney_Prompter():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "comfyui_rn_translator-config.json")
+        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -635,9 +659,12 @@ class RN_LLMAPI_Node():
     def rn_run_llmapi(self, api_baseurl, api_key, model, role, prompt, temperature, seed, 
                       max_video_frames=5, ref_image=None, video=None):
         cfg = get_config()
-        used_api_baseurl = (api_baseurl or cfg.get("base_url"))
-        used_api_key = (api_key or cfg.get("api_key") or "")
-        used_model = (model or cfg.get("model") or "gpt-4o-mini")
+        vllm_cfg = get_vllm_config()
+        has_visual = (ref_image is not None) or (video is not None)
+        selected_cfg = vllm_cfg if has_visual else cfg
+        used_api_baseurl = (api_baseurl or selected_cfg.get("base_url"))
+        used_api_key = (api_key or selected_cfg.get("api_key") or "")
+        used_model = (model or selected_cfg.get("model") or ("qwen25-vl-32b-instruct" if has_visual else "gpt-4o-mini"))
         
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
         
@@ -714,12 +741,13 @@ class RN_LLMAPI_Pro_Node():
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model": (["doubao-seed-1-6-251015", 
+                "model": (["default",
+                "doubao-seed-1-6-251015", 
                 "DeepSeek-V3",
                 "Qwen3-235B-A22B-Instruct-2507", 
                 "gemini-2.5-flash", 
                 "gpt-5",
-                "gemini-3-pro-preview"], {"default": "doubao-seed-1-6-251015"}),
+                "gemini-3-pro-preview"], {"default": "default"}),
                 "role": ("STRING", {"multiline": True, "default": "You are a helpful assistant"}),
                 "prompt": ("STRING", {"multiline": True, "default": "Hello"}),
                 "temperature": ("FLOAT", {"default": 0.6}),
@@ -737,10 +765,14 @@ class RN_LLMAPI_Pro_Node():
 
     def rn_run_llmapi_pro(self, model, role, prompt, temperature, seed, api_baseurl='', api_key='', ref_image=None):
         cfg = get_config()
-        # used_api_baseurl = (api_baseurl or env_api_baseurl or cfg.get("base_url") or "https://ai.t8star.cn//v1")
-        used_api_baseurl = (api_baseurl or cfg.get("base_url"))
-        used_api_key = (api_key or cfg.get("api_key") or "")
-        used_model = (model or cfg.get("model") or "doubao-seed-1-6-251015")
+        vllm_cfg = get_vllm_config()
+        if model == "default":
+            model = ""
+        has_visual = (ref_image is not None)
+        selected_cfg = vllm_cfg if has_visual else cfg
+        used_api_baseurl = (api_baseurl or selected_cfg.get("base_url"))
+        used_api_key = (api_key or selected_cfg.get("api_key") or "")
+        used_model = (model or selected_cfg.get("model") or ("qwen25-vl-32b-instruct" if has_visual else "gpt-4o-mini"))
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
         if ref_image is None:
             messages = [
