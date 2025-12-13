@@ -91,8 +91,16 @@ def save_config(config):
 
 def get_vllm_config():
     try:
-        config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
-                                  'ComfyUI_rn_translator-config.json')
+        config_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         vllm_config = config.get('vllm', {})
@@ -201,7 +209,16 @@ class RN_Translator():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+        cfg_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+
+        cfg_path = None
+        for path in cfg_paths:
+            if os.path.exists(path):
+                cfg_path = path
+                break
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -349,7 +366,17 @@ class RN_Prompt_Translator():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+        # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+        cfg_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+
+        cfg_path = None
+        for path in cfg_paths:
+            if os.path.exists(path):
+                cfg_path = path
+                break
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -498,7 +525,17 @@ class RN_Midjourney_Prompter():
         pass
 
     def _load_llm_config(self):
-        cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+        # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+        cfg_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+
+        cfg_path = None
+        for path in cfg_paths:
+            if os.path.exists(path):
+                cfg_path = path
+                break
         if not os.path.exists(cfg_path):
             return {}
         try:
@@ -747,7 +784,17 @@ class RN_LLMAPI_Pro_Node():
 
     def _load_config_json(self):
         try:
-            cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+            # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
+            cfg_paths = [
+                os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+                os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+            ]
+
+            cfg_path = None
+            for path in cfg_paths:
+                if os.path.exists(path):
+                    cfg_path = path
+                    break
             with open(cfg_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
