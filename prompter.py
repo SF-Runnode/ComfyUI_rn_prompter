@@ -55,8 +55,15 @@ def get_config():
 def save_config(config):
     try:
         # 修改配置文件路径为新的配置文件
-        config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
-                                  'ComfyUI_RN_External_Interface-config.json')
+        config_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
         
         # 先读取现有的配置
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -119,6 +126,82 @@ def get_vllm_config():
         return {}
     except Exception:
         return {}
+
+
+def get_model_config(model_name):
+    """
+    根据模型显示名称查找配置文件中的配置
+    
+    Args:
+        model_name: 用户在界面中选择的模型名称（如"Qwen2.5-VL-32B-Instruct"）
+    
+    Returns:
+        包含该模型配置的字典，如果找不到则返回空字典
+    """
+    try:
+        # 修改配置文件路径为新的配置文件
+        # config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
+        #                           'ComfyUI_rn_translator-config.json')
+        
+        config_paths = [
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+        ]
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
+        with open(config_path, 'r', encoding='utf-8') as f:  
+            config = json.load(f)
+        
+        # 模型名称映射字典（前端显示名称 -> 配置中的模型名称）
+        mapping = {
+            "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
+            "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
+            "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
+            "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
+            "Qwen3-32B": "Qwen/Qwen3-32B",
+            "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
+            "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
+            "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+            "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
+            "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
+            "glm-4-9b-chat": "glm-4-9b-chat",
+            "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
+            "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
+            "GLM-4.6": "ZhipuAI/GLM-4.6",
+            "bge-m3": "BAAI/bge-m3",
+            "bge-reranker-v2-m3": "BAAI/bge-reranker-v2-m3",
+        }
+        
+        # 获取映射后的模型名称
+        mapped_name = mapping.get(model_name, model_name)
+        
+        # 在vllm和llm的providers中查找匹配的配置
+        for section in ['vllm', 'llm']:
+            if section in config:
+                providers = config[section].get('providers', {})
+                for provider_name, provider_config in providers.items():
+                    if provider_config.get('model') == mapped_name:
+                        # 找到匹配的配置
+                        return {
+                            'api_key': provider_config.get('api_key', ''),
+                            'model': provider_config.get('model', ''),
+                            'base_url': provider_config.get('base_url', ''),
+                            'temperature': provider_config.get('temperature', 0.7),
+                            'max_tokens': provider_config.get('max_tokens', 1000),
+                            'top_p': provider_config.get('top_p', 0.9)
+                        }
+        
+        # 如果没有找到，返回空字典
+        return {}
+            
+    except Exception as e:
+        print(f"Error loading model config: {e}")
+        return {}
+
 
 
 baseurl = get_config().get('base_url', '')
@@ -778,71 +861,9 @@ class RN_LLMAPI_Node():
 
 
 class RN_LLMAPI_Pro_Node():
-
     def __init__(self):
         pass
 
-    def _load_config_json(self):
-        try:
-            # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
-            cfg_paths = [
-                os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-                os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
-            ]
-
-            cfg_path = None
-            for path in cfg_paths:
-                if os.path.exists(path):
-                    cfg_path = path
-                    break
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-
-    def _get_model_config(self, display_name):
-        cfg = self._load_config_json()
-        vllm = cfg.get("vllm") or {}
-        llm = cfg.get("llm") or {}
-        v_models = vllm.get("models") or {}
-        l_models = llm.get("models") or {}
-        model_cfg = v_models.get(display_name) or l_models.get(display_name)
-        if isinstance(model_cfg, dict):
-            return {
-                "api_key": model_cfg.get("api_key") or "",
-                "model": model_cfg.get("model") or "",
-                "base_url": model_cfg.get("base_url") or "",
-                "temperature": model_cfg.get("temperature"),
-                "max_tokens": model_cfg.get("max_tokens"),
-                "top_p": model_cfg.get("top_p"),
-            }
-        return None
-
-    def _fallback_model_name(self, display_name):
-        mapping = {
-            "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
-            "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct",
-            "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
-            "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B",
-            "Qwen3-32B": "Qwen/Qwen3-32B",
-            "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B",
-            "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
-            "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-            "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-            "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
-            "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
-            "glm-4-9b-chat": "glm-4-9b-chat",
-            "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
-            "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
-            "GLM-4.6": "ZhipuAI/GLM-4.6",
-            "bge-m3": "BAAI/bge-m3",
-            "bge-reranker-v2-m3": "BAAI/bge-reranker-v2-m3",
-        }
-        if not display_name:
-            return ""
-        if "/" in display_name:
-            return display_name
-        return mapping.get(display_name, display_name)
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -881,13 +902,21 @@ class RN_LLMAPI_Pro_Node():
     CATEGORY = "RunNode/rn_prompter"
 
     def rn_run_llmapi_pro(self, model, role, prompt, temperature, seed, api_baseurl='', api_key='', ref_image=None):
-        cfg = get_config()
-        model_cfg = self._get_model_config(model) if hasattr(self, "_get_model_config") else None
-        used_api_baseurl = api_baseurl or (model_cfg or {}).get("base_url") or cfg.get("base_url")
-        used_api_key = api_key or (model_cfg or {}).get("api_key") or cfg.get("api_key") or ""
-        base_model = (model_cfg or {}).get("model") or (self._fallback_model_name(model) if hasattr(self, "_fallback_model_name") else model) or model
-        used_model = base_model
+        # 获取模型对应的配置
+        model_config = get_model_config(model)
+        
+        # 优先使用传入的api_baseurl和api_key，如果没有则使用配置文件中的
+        used_api_baseurl = api_baseurl or model_config.get('base_url', '')
+        used_api_key = api_key or model_config.get('api_key', '')
+        used_model = model_config.get('model', model)  # 如果没有找到配置，使用原始模型名称
+        
+        # 如果配置中也没有模型名称，使用默认值
+        if not used_model:
+            used_model = "qwen25-vl-32b-instruct"  # 或其他默认值
+        
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
+        
+        # 处理消息（保持原有的图片处理逻辑不变）
         if ref_image is None:
             messages = [
                 {'role': 'system', 'content': f'{role}'},
@@ -911,12 +940,17 @@ class RN_LLMAPI_Pro_Node():
                         },
                     ]},
             ]
-        try:
-            completion = client.chat.completions.create(model=used_model, messages=messages, temperature=temperature)
-            if completion is not None and hasattr(completion, 'choices'):
-                result = completion.choices[0].message.content
-            else:
-                result = 'Error: No response from API'
-        except Exception as e:
-            result = f"API调用出错: {str(e)}"
-        return (result,)
+        
+        # 调用API
+        completion = client.chat.completions.create(
+            model=used_model, 
+            messages=messages, 
+            temperature=temperature
+        )
+        
+        if completion is not None and hasattr(completion, 'choices'):
+            prompt = completion.choices[0].message.content
+        else:
+            prompt = 'Error'
+            
+        return (prompt,)
