@@ -140,18 +140,17 @@ def get_model_config(model_name):
     """
     try:
         # 修改配置文件路径为新的配置文件
-        # config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config",
-        #                           'ComfyUI_rn_translator-config.json')
-        
         config_paths = [
             os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
             os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
         ]
+
         config_path = None
         for path in config_paths:
             if os.path.exists(path):
                 config_path = path
                 break
+        
         with open(config_path, 'r', encoding='utf-8') as f:  
             config = json.load(f)
         
@@ -172,36 +171,57 @@ def get_model_config(model_name):
             "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
             "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
             "GLM-4.6": "ZhipuAI/GLM-4.6",
-            "bge-m3": "BAAI/bge-m3",
-            "bge-reranker-v2-m3": "BAAI/bge-reranker-v2-m3",
+            "bge-m3": "bge-m3",
+            "bge-reranker-v2-m3": "bge-reranker-v2-m3",
         }
         
         # 获取映射后的模型名称
         mapped_name = mapping.get(model_name, model_name)
         
-        # 在vllm和llm的providers中查找匹配的配置
-        for section in ['vllm', 'llm']:
-            if section in config:
-                providers = config[section].get('providers', {})
-                for provider_name, provider_config in providers.items():
-                    if provider_config.get('model') == mapped_name:
-                        # 找到匹配的配置
-                        return {
-                            'api_key': provider_config.get('api_key', ''),
-                            'model': provider_config.get('model', ''),
-                            'base_url': provider_config.get('base_url', ''),
-                            'temperature': provider_config.get('temperature', 0.7),
-                            'max_tokens': provider_config.get('max_tokens', 1000),
-                            'top_p': provider_config.get('top_p', 0.9)
-                        }
+        # 直接在整个配置中查找匹配的model字段
+        def find_matching_config(config_dict, target_model):
+            """递归查找匹配的配置"""
+            if isinstance(config_dict, dict):
+                # 检查当前字典是否有model字段且匹配
+                if 'model' in config_dict and config_dict['model'] == target_model:
+                    # 找到了匹配的配置
+                    return {
+                        'api_key': config_dict.get('api_key', ''),
+                        'model': config_dict.get('model', ''),
+                        'base_url': config_dict.get('base_url', ''),
+                        'temperature': config_dict.get('temperature', 0.7),
+                        'max_tokens': config_dict.get('max_tokens', 1000),
+                        'top_p': config_dict.get('top_p', 0.9)
+                    }
+                
+                # 递归查找子字典
+                for key, value in config_dict.items():
+                    result = find_matching_config(value, target_model)
+                    if result:
+                        return result
+            
+            elif isinstance(config_dict, list):
+                # 递归查找列表中的字典
+                for item in config_dict:
+                    result = find_matching_config(item, target_model)
+                    if result:
+                        return result
+            
+            return None
         
-        # 如果没有找到，返回空字典
+        # 在整个配置中查找
+        result = find_matching_config(config, mapped_name)
+        
+        if result:
+            print(f"Found config for {model_name} -> {mapped_name}")
+            return result
+        
+        print(f"No matching config found for {model_name} -> {mapped_name}")
         return {}
             
     except Exception as e:
         print(f"Error loading model config: {e}")
         return {}
-
 
 
 baseurl = get_config().get('base_url', '')
@@ -908,11 +928,44 @@ class RN_LLMAPI_Pro_Node():
         # 优先使用传入的api_baseurl和api_key，如果没有则使用配置文件中的
         used_api_baseurl = api_baseurl or model_config.get('base_url', '')
         used_api_key = api_key or model_config.get('api_key', '')
-        used_model = model_config.get('model', model)  # 如果没有找到配置，使用原始模型名称
+        used_model = model_config.get('model', '')  # 使用配置中的模型名称
         
-        # 如果配置中也没有模型名称，使用默认值
+        # 如果配置中没有模型名称，使用映射后的名称
         if not used_model:
-            used_model = "qwen25-vl-32b-instruct"  # 或其他默认值
+            # 模型名称映射字典
+            mapping = {
+                "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
+                "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
+                "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
+                "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
+                "Qwen3-32B": "Qwen/Qwen3-32B",
+                "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
+                "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
+                "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+                "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+                "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
+                "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
+                "glm-4-9b-chat": "glm-4-9b-chat",
+                "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
+                "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
+                "GLM-4.6": "ZhipuAI/GLM-4.6",
+                "bge-m3": "bge-m3",
+                "bge-reranker-v2-m3": "bge-reranker-v2-m3",
+            }
+            used_model = mapping.get(model, model)
+        
+        # 如果base_url或api_key为空，使用默认的get_config作为后备
+        if not used_api_baseurl or not used_api_key:
+            cfg = get_config()
+            used_api_baseurl = used_api_baseurl or cfg.get('base_url', '')
+            used_api_key = used_api_key or cfg.get('api_key', '')
+        
+        # 最终的检查，确保有base_url
+        if not used_api_baseurl:
+            return ("ERROR: No API base URL configured. Please check your configuration.",)
+        
+        print(f"Using base_url: {used_api_baseurl}")
+        print(f"Using model: {used_model}")
         
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
         
@@ -942,15 +995,20 @@ class RN_LLMAPI_Pro_Node():
             ]
         
         # 调用API
-        completion = client.chat.completions.create(
-            model=used_model, 
-            messages=messages, 
-            temperature=temperature
-        )
-        
-        if completion is not None and hasattr(completion, 'choices'):
-            prompt = completion.choices[0].message.content
-        else:
-            prompt = 'Error'
+        try:
+            completion = client.chat.completions.create(
+                model=used_model, 
+                messages=messages, 
+                temperature=temperature
+            )
+            
+            if completion is not None and hasattr(completion, 'choices'):
+                prompt = completion.choices[0].message.content
+            else:
+                prompt = 'Error: No response from API'
+                
+        except Exception as e:
+            print(f"API call error: {e}")
+            prompt = f'Error: {str(e)}'
             
         return (prompt,)
