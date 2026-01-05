@@ -11,7 +11,6 @@ import base64
 
 def get_config():
     try:
-        # 修改配置文件路径为新的配置文件
         config_paths = [
             os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
             os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
@@ -23,29 +22,59 @@ def get_config():
                 config_path = path
                 break
         
-        with open(config_path, 'r', encoding='utf-8') as f:  
-            config = json.load(f)
+        config = {}
+        if config_path and os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:  
+                config = json.load(f)
         
-        # 从llm部分获取当前provider的配置
         llm_config = config.get('llm', {})
         current_provider = llm_config.get('current_provider', 'quchi')
         providers = llm_config.get('providers', {})
         
-        # 获取当前provider的配置
-        if current_provider in providers:
-            provider_config = providers[current_provider]
-            # 返回包含api_key的字典，保持与原函数兼容
-            return {
-                'api_key': provider_config.get('api_key', ''),
-                'model': provider_config.get('model', ''),
-                'base_url': provider_config.get('base_url', ''),
-                'temperature': provider_config.get('temperature', 0.7),
-                'max_tokens': provider_config.get('max_tokens', 1000),
-                'top_p': provider_config.get('top_p', 0.9)
-            }
-        else:
-            # 如果当前provider不存在，返回空字典
-            return {}
+        provider_config = providers.get(current_provider, {})
+
+        def _env(names):
+            for n in names:
+                v = os.environ.get(n)
+                if v is not None and str(v).strip() != "":
+                    return v
+            return None
+
+        def _env_float(names, default):
+            v = _env(names)
+            if v is None:
+                return default
+            try:
+                return float(v)
+            except Exception:
+                return default
+
+        def _env_int(names, default):
+            v = _env(names)
+            if v is None:
+                return default
+            try:
+                return int(v)
+            except Exception:
+                return default
+
+        # 统一的 API Key 读取逻辑 (Env > Config)
+        api_key = _env(["COMFYUI_RN_API_KEY", "COMFLY_API_KEY", "RUNNODE_API_KEY", "RN_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"]) or provider_config.get('api_key', '')
+        base_url = _env(["COMFYUI_RN_BASE_URL", "COMFLY_BASE_URL", "RUNNODE_BASE_URL", "RN_BASE_URL", "LLM_API_BASEURL", "OPENAI_BASE_URL", "OPENAI_API_BASE_URL", "DEEPSEEK_API_BASE_URL"]) or provider_config.get('base_url', '')
+        model = _env(["COMFYUI_RN_MODEL", "COMFLY_MODEL", "RUNNODE_MODEL", "RN_MODEL", "LLM_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL"]) or provider_config.get('model', '')
+        
+        temperature = _env_float(["COMFYUI_RN_TEMPERATURE", "COMFLY_TEMPERATURE"], provider_config.get('temperature', 0.7))
+        max_tokens = _env_int(["COMFYUI_RN_MAX_TOKENS", "COMFLY_MAX_TOKENS"], provider_config.get('max_tokens', 1000))
+        top_p = _env_float(["COMFYUI_RN_TOP_P", "COMFLY_TOP_P"], provider_config.get('top_p', 0.9))
+
+        return {
+            'api_key': api_key,
+            'model': model,
+            'base_url': base_url,
+            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'top_p': top_p
+        }
             
     except Exception as e:
         print(f"Error loading config: {e}")
@@ -53,47 +82,9 @@ def get_config():
 
 
 def save_config(config):
-    try:
-        # 修改配置文件路径为新的配置文件
-        config_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
-        ]
-        config_path = None
-        for path in config_paths:
-            if os.path.exists(path):
-                config_path = path
-                break
-        
-        # 先读取现有的配置
-        with open(config_path, 'r', encoding='utf-8') as f:
-            existing_config = json.load(f)
-        
-        # 从llm部分获取当前provider
-        llm_config = existing_config.get('llm', {})
-        current_provider = llm_config.get('current_provider', 'deepseek')
-        providers = llm_config.get('providers', {})
-        
-        # 更新当前provider的api_key
-        if current_provider in providers:
-            # 只更新api_key，保持其他配置不变
-            if 'api_key' in config:
-                providers[current_provider]['api_key'] = config['api_key']
-            
-            # 可选：更新其他字段
-            for key in ['model', 'base_url', 'temperature', 'max_tokens', 'top_p']:
-                if key in config:
-                    providers[current_provider][key] = config[key]
-            
-            # 更新回配置
-            existing_config['llm']['providers'] = providers
-            
-            # 写回文件
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(existing_config, f, indent=2, ensure_ascii=False)
-                
-    except Exception as e:
-        print(f"Error saving config: {e}")
+    # 禁用配置保存以防止密钥泄露
+    # raise PermissionError("save_config is disabled")
+    pass
 
 
 def get_vllm_config():
@@ -108,22 +99,55 @@ def get_vllm_config():
             if os.path.exists(path):
                 config_path = path
                 break
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        config = {}
+        if config_path and os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
         vllm_config = config.get('vllm', {})
         current_provider = vllm_config.get('current_provider', 'quchi')
         providers = vllm_config.get('providers', {})
-        if current_provider in providers:
-            provider_config = providers[current_provider]
-            return {
-                'api_key': provider_config.get('api_key', ''),
-                'model': provider_config.get('model', ''),
-                'base_url': provider_config.get('base_url', ''),
-                'temperature': provider_config.get('temperature', 0.7),
-                'max_tokens': provider_config.get('max_tokens', 1000),
-                'top_p': provider_config.get('top_p', 0.9)
-            }
-        return {}
+        provider_config = providers.get(current_provider, {})
+
+        def _env(names):
+            for n in names:
+                v = os.environ.get(n)
+                if v is not None and str(v).strip() != "":
+                    return v
+            return None
+
+        def _env_float(names, default):
+            v = _env(names)
+            if v is None:
+                return default
+            try:
+                return float(v)
+            except Exception:
+                return default
+
+        def _env_int(names, default):
+            v = _env(names)
+            if v is None:
+                return default
+            try:
+                return int(v)
+            except Exception:
+                return default
+
+        api_key = _env(["COMFYUI_RN_API_KEY", "COMFLY_API_KEY", "RUNNODE_API_KEY", "RN_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"]) or provider_config.get('api_key', '')
+        base_url = _env(["COMFYUI_RN_BASE_URL", "COMFLY_BASE_URL", "RUNNODE_BASE_URL", "RN_BASE_URL", "LLM_API_BASEURL", "OPENAI_BASE_URL", "OPENAI_API_BASE_URL", "DEEPSEEK_API_BASE_URL"]) or provider_config.get('base_url', '')
+        model = _env(["COMFYUI_RN_MODEL", "COMFLY_MODEL", "RUNNODE_MODEL", "RN_MODEL", "LLM_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL"]) or provider_config.get('model', '')
+        temperature = _env_float(["COMFYUI_RN_TEMPERATURE", "COMFLY_TEMPERATURE"], provider_config.get('temperature', 0.7))
+        max_tokens = _env_int(["COMFYUI_RN_MAX_TOKENS", "COMFLY_MAX_TOKENS"], provider_config.get('max_tokens', 1000))
+        top_p = _env_float(["COMFYUI_RN_TOP_P", "COMFLY_TOP_P"], provider_config.get('top_p', 0.9))
+
+        return {
+            'api_key': api_key,
+            'model': model,
+            'base_url': base_url,
+            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'top_p': top_p
+        }
     except Exception:
         return {}
 
@@ -311,30 +335,6 @@ class RN_Translator():
     def __init__(self):
         pass
 
-    def _load_llm_config(self):
-        cfg_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
-        ]
-
-        cfg_path = None
-        for path in cfg_paths:
-            if os.path.exists(path):
-                cfg_path = path
-                break
-        if not os.path.exists(cfg_path):
-            return {}
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            llm = data.get("llm") or {}
-            current = llm.get("current_provider")
-            providers = llm.get("providers") or {}
-            provider_cfg = providers.get(current) or {}
-            return provider_cfg
-        except Exception:
-            return {}
-
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -344,6 +344,9 @@ class RN_Translator():
             },
             "optional": {
                 "seed": ("INT", {"default": 100, "min": 0, "max": 0xffffffffffffffff}),
+                "apiBaseUrl": ("STRING", {"default": ""}),
+                "apiKey": ("STRING", {"default": ""}),
+                "model": ("STRING", {"default": ""}),
             }
         }
 
@@ -387,24 +390,25 @@ class RN_Translator():
         return ("English", "Chinese")
 
     def _translate_chunk(self, chunk, src_label, dst_label, temperature=None, apiBaseUrl=None, apiKey=None, model=None):
-        if apiBaseUrl == "default":
-            apiBaseUrl = ""
-        if apiKey == "default":
-            apiKey = ""
-        if model == "default":
-            model = ""
-
         cfg = get_config()
-        cfg_base_url = cfg.get("base_url")
-        cfg_api_key = cfg.get("api_key")
-        cfg_model = cfg.get("model")
-        cfg_temperature = cfg.get("temperature")
-        cfg_max_tokens = cfg.get("max_tokens")
-        cfg_top_p = cfg.get("top_p")
+        
+        # 处理输入回退逻辑: Input -> Env -> Config
+        # 如果输入了有效的apiKey (非空且非default)，则使用输入值，否则使用配置值
+        if apiKey and str(apiKey).strip() and str(apiKey) != "default":
+            used_api_key = apiKey
+        else:
+            used_api_key = cfg.get("api_key", "")
 
-        used_api_baseurl = (apiBaseUrl or cfg_base_url or "https://ai.t8star.cn//v1")
-        used_model = (model or cfg_model or "gpt-4o-mini")
-        used_api_key = (apiKey or cfg_api_key or "")
+        if apiBaseUrl and str(apiBaseUrl).strip() and str(apiBaseUrl) != "default":
+            used_api_baseurl = apiBaseUrl
+        else:
+            used_api_baseurl = cfg.get("base_url") or "https://ai.t8star.cn//v1"
+
+        if model and str(model).strip() and str(model) != "default":
+            used_model = model
+        else:
+            used_model = cfg.get("model") or "gpt-4o-mini"
+
         if not used_api_key:
             return "错误：请提供API密钥"
 
@@ -424,20 +428,28 @@ class RN_Translator():
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt.strip()},
             ]
+            
+            cfg_temperature = cfg.get("temperature")
             use_temperature = (
                 temperature if temperature is not None else (
                     cfg_temperature if cfg_temperature is not None else 0.3
                 )
             )
+            
+            cfg_max_tokens = cfg.get("max_tokens")
             use_max_tokens = cfg_max_tokens if cfg_max_tokens is not None else 512
+            
             params = {
                 "model": used_model,
                 "messages": messages,
                 "temperature": use_temperature,
                 "max_tokens": use_max_tokens,
             }
+            
+            cfg_top_p = cfg.get("top_p")
             if cfg_top_p is not None:
                 params["top_p"] = cfg_top_p
+                
             completion = client.chat.completions.create(**params)
             if completion is not None and hasattr(completion, 'choices') and len(completion.choices) > 0:
                 return completion.choices[0].message.content.strip()
@@ -445,18 +457,19 @@ class RN_Translator():
         except Exception as e:
             return f"翻译错误：{str(e)}"
 
-    def translate_text(self, prompt, advanced_options, seed=0):
+    def translate_text(self, prompt, advanced_options, seed=0, apiBaseUrl="default", apiKey="default", model="default"):
+
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
         if not cleaned.strip():
             return ("错误：请输入要翻译的文本",)
         src_label, dst_label = self._detect_direction(cleaned, advanced_options)
         chunks = self._split_text_into_chunks(cleaned, max_chunk_size=400)
         if len(chunks) == 1:
-            res = self._translate_chunk(chunks[0], src_label, dst_label)
+            res = self._translate_chunk(chunks[0], src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model)
             return (res,)
         translated = []
         for c in chunks:
-            translated.append(self._translate_chunk(c, src_label, dst_label))
+            translated.append(self._translate_chunk(c, src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model))
         return (' '.join(translated),)
 
     @classmethod
@@ -468,31 +481,6 @@ class RN_Prompt_Translator():
     def __init__(self):
         pass
 
-    def _load_llm_config(self):
-        # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
-        cfg_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
-        ]
-
-        cfg_path = None
-        for path in cfg_paths:
-            if os.path.exists(path):
-                cfg_path = path
-                break
-        if not os.path.exists(cfg_path):
-            return {}
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            llm = data.get("llm") or {}
-            current = llm.get("current_provider")
-            providers = llm.get("providers") or {}
-            provider_cfg = providers.get(current) or {}
-            return provider_cfg
-        except Exception:
-            return {}
-
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -502,6 +490,9 @@ class RN_Prompt_Translator():
             },
             "optional": {
                 "seed": ("INT", {"default": 100, "min": 0, "max": 0xffffffffffffffff}),
+                "apiBaseUrl": ("STRING", {"default": ""}),
+                "apiKey": ("STRING", {"default": ""}),
+                "model": ("STRING", {"default": ""}),
             }
         }
 
@@ -545,24 +536,24 @@ class RN_Prompt_Translator():
         return ("English", "Chinese")
 
     def _translate_chunk(self, chunk, src_label, dst_label, temperature=None, apiBaseUrl=None, apiKey=None, model=None):
-        if apiBaseUrl == "default":
-            apiBaseUrl = ""
-        if apiKey == "default":
-            apiKey = ""
-        if model == "default":
-            model = ""
-
         cfg = get_config()
-        cfg_base_url = cfg.get("base_url")
-        cfg_api_key = cfg.get("api_key")
-        cfg_model = cfg.get("model")
-        cfg_temperature = cfg.get("temperature")
-        cfg_max_tokens = cfg.get("max_tokens")
-        cfg_top_p = cfg.get("top_p")
+        
+        # 处理输入回退逻辑: Input -> Env -> Config
+        if apiKey and str(apiKey).strip() and str(apiKey) != "default":
+            used_api_key = apiKey
+        else:
+            used_api_key = cfg.get("api_key", "")
 
-        used_api_baseurl = (apiBaseUrl or cfg_base_url or "https://ai.t8star.cn//v1")
-        used_model = (model or cfg_model or "gpt-4o-mini")
-        used_api_key = (apiKey or cfg_api_key or "")
+        if apiBaseUrl and str(apiBaseUrl).strip() and str(apiBaseUrl) != "default":
+            used_api_baseurl = apiBaseUrl
+        else:
+            used_api_baseurl = cfg.get("base_url") or "https://ai.t8star.cn//v1"
+
+        if model and str(model).strip() and str(model) != "default":
+            used_model = model
+        else:
+            used_model = cfg.get("model") or "gpt-4o-mini"
+
         if not used_api_key:
             return "错误：请提供API密钥"
 
@@ -583,20 +574,28 @@ class RN_Prompt_Translator():
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt.strip()},
             ]
+            
+            cfg_temperature = cfg.get("temperature")
             use_temperature = (
                 temperature if temperature is not None else (
                     cfg_temperature if cfg_temperature is not None else 0.3
                 )
             )
+            
+            cfg_max_tokens = cfg.get("max_tokens")
             use_max_tokens = cfg_max_tokens if cfg_max_tokens is not None else 512
+            
             params = {
                 "model": used_model,
                 "messages": messages,
                 "temperature": use_temperature,
                 "max_tokens": use_max_tokens,
             }
+            
+            cfg_top_p = cfg.get("top_p")
             if cfg_top_p is not None:
                 params["top_p"] = cfg_top_p
+                
             completion = client.chat.completions.create(**params)
             if completion is not None and hasattr(completion, 'choices') and len(completion.choices) > 0:
                 return completion.choices[0].message.content.strip()
@@ -604,18 +603,19 @@ class RN_Prompt_Translator():
         except Exception as e:
             return f"翻译错误：{str(e)}"
 
-    def translate_text(self, prompt, advanced_options, seed=0):
+    def translate_text(self, prompt, advanced_options, seed=0, apiBaseUrl="default", apiKey="default", model="default"):
+
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
         if not cleaned.strip():
             return ("错误：请输入要翻译的文本",)
         src_label, dst_label = self._detect_direction(cleaned, advanced_options)
         chunks = self._split_text_into_chunks(cleaned, max_chunk_size=400)
         if len(chunks) == 1:
-            res = self._translate_chunk(chunks[0], src_label, dst_label)
+            res = self._translate_chunk(chunks[0], src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model)
             return (res,)
         translated = []
         for c in chunks:
-            translated.append(self._translate_chunk(c, src_label, dst_label))
+            translated.append(self._translate_chunk(c, src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model))
         return (' '.join(translated),)
 
     @classmethod
@@ -627,31 +627,6 @@ class RN_Midjourney_Prompter():
     def __init__(self):
         pass
 
-    def _load_llm_config(self):
-        # cfg_path = os.path.join(os.path.dirname(__file__), "config", "ComfyUI_rn_translator-config.json")
-        cfg_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
-        ]
-
-        cfg_path = None
-        for path in cfg_paths:
-            if os.path.exists(path):
-                cfg_path = path
-                break
-        if not os.path.exists(cfg_path):
-            return {}
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            llm = data.get("llm") or {}
-            current = llm.get("current_provider")
-            providers = llm.get("providers") or {}
-            provider_cfg = providers.get(current) or {}
-            return provider_cfg
-        except Exception:
-            return {}
-
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -661,9 +636,9 @@ class RN_Midjourney_Prompter():
             "optional": {
                 "seed": ("INT", {"default": 100, "min": 0, "max": 0xffffffffffffffff}),
                 "temperature": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1}),
-                # "apiBaseUrl": ("STRING", {"default": "default"}),
-                # "apiKey": ("STRING", {"default": "default"}),
-                # "model": ("STRING", {"default": "default"}),
+                "apiBaseUrl": ("STRING", {"default": "default"}),
+                "apiKey": ("STRING", {"default": "default"}),
+                "model": ("STRING", {"default": "default"}),
             }
         }
 
@@ -698,38 +673,35 @@ class RN_Midjourney_Prompter():
         return final
 
     def _generate_chunk_mj(self, chunk, temperature=None, apiBaseUrl=None, apiKey=None, model=None):
-        if apiBaseUrl == "default":
-            apiBaseUrl = ""
-        if apiKey == "default":
-            apiKey = ""
-        if model == "default":
-            model = ""
-
         cfg = get_config()
-        cfg_base_url = cfg.get("base_url")
-        cfg_api_key = cfg.get("api_key")
-        cfg_model = cfg.get("model")
-        cfg_temperature = cfg.get("temperature")
-        cfg_max_tokens = cfg.get("max_tokens")
-        cfg_top_p = cfg.get("top_p")
+        
+        # 处理输入回退逻辑: Input -> Env -> Config
+        if apiKey and str(apiKey).strip() and str(apiKey) != "default":
+            used_api_key = apiKey
+        else:
+            used_api_key = cfg.get("api_key", "")
 
-        used_api_baseurl = (apiBaseUrl or cfg_base_url or "https://ai.t8star.cn//v1")
-        used_model = (model or cfg_model or "gpt-4o-mini")
-        used_api_key = (apiKey or cfg_api_key or "")
+        if apiBaseUrl and str(apiBaseUrl).strip() and str(apiBaseUrl) != "default":
+            used_api_baseurl = apiBaseUrl
+        else:
+            used_api_baseurl = cfg.get("base_url") or "https://ai.t8star.cn//v1"
+
+        if model and str(model).strip() and str(model) != "default":
+            used_model = model
+        else:
+            used_model = cfg.get("model") or "gpt-4o-mini"
+            
         if not used_api_key:
             return "错误：请提供API密钥"
 
         try:
             client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
-            system_prompt = "你是资深提示词工程师，专注将输入内容重写为 Midjourney 风格英文提示词。"
+            system_prompt = "You are a professional Midjourney prompt engineer."
             user_prompt = f"""
-                            Rewrite the following content as a Midjourney-style prompt in English only.
-                            Requirements:
-                            - concise, comma-separated tags
-                            - include subject, medium, style, lighting, composition, color palette
-                            - add camera/lens and mood if relevant
-                            - no parameters/flags (e.g., --ar, --v, --s)
-                            - no explanations or extra text, return only the final prompt
+                            Rewrite the following description into a high-quality Midjourney prompt.
+                            - Format: [Subject], [Action/Context], [Art Style/Medium], [Lighting], [Colors], [Composition], --ar 16:9 --v 6.0
+                            - Keep it descriptive but concise.
+                            - Use English only.
                             Content:
                             {chunk}
                             """
@@ -737,26 +709,34 @@ class RN_Midjourney_Prompter():
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt.strip()},
             ]
+            
+            cfg_temperature = cfg.get("temperature")
             use_temperature = (
                 temperature if temperature is not None else (
                     cfg_temperature if cfg_temperature is not None else 0.3
                 )
             )
+            
+            cfg_max_tokens = cfg.get("max_tokens")
             use_max_tokens = cfg_max_tokens if cfg_max_tokens is not None else 512
+            
             params = {
                 "model": used_model,
                 "messages": messages,
                 "temperature": use_temperature,
                 "max_tokens": use_max_tokens,
             }
+            
+            cfg_top_p = cfg.get("top_p")
             if cfg_top_p is not None:
                 params["top_p"] = cfg_top_p
+                
             completion = client.chat.completions.create(**params)
             if completion is not None and hasattr(completion, 'choices') and len(completion.choices) > 0:
                 return completion.choices[0].message.content.strip()
-            return "错误：API返回空结果"
+            return "Error: Empty response"
         except Exception as e:
-            return f"生成错误：{str(e)}"
+            return f"Error: {str(e)}"
 
     def generate_mj_prompt(self, prompt, seed=0, temperature=0.3, apiBaseUrl="default", apiKey="default", model="default"):
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
@@ -913,6 +893,8 @@ class RN_LLMAPI_Pro_Node():
             },
             "optional": {
                 "ref_image": ("IMAGE",),
+                "api_baseurl": ("STRING", {"multiline": True, "default": ""}),
+                "api_key": ("STRING", {"multiline": True, "default": ""}),
             }
         }
 
