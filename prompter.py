@@ -7,6 +7,13 @@ from PIL import Image
 import numpy as np
 import base64
 
+def _normalize_baseurl(u):
+    if not u:
+        return u
+    s = u.rstrip("/")
+    if s.endswith("/v1") or "/v1/" in s:
+        return s
+    return s + "/v1"
 
 
 def get_config():
@@ -392,17 +399,15 @@ class RN_Translator():
     def _translate_chunk(self, chunk, src_label, dst_label, temperature=None, apiBaseUrl=None, apiKey=None, model=None):
         cfg = get_config()
         
-        # 处理输入回退逻辑: Input -> Env -> Config
-        # 如果输入了有效的apiKey (非空且非default)，则使用输入值，否则使用配置值
         if apiKey and str(apiKey).strip() and str(apiKey) != "default":
             used_api_key = apiKey
         else:
-            used_api_key = cfg.get("api_key", "")
+            used_api_key = os.environ.get("COMFYUI_RN_API_KEY") or cfg.get("api_key", "")
 
         if apiBaseUrl and str(apiBaseUrl).strip() and str(apiBaseUrl) != "default":
-            used_api_baseurl = apiBaseUrl
+            used_api_baseurl = _normalize_baseurl(apiBaseUrl)
         else:
-            used_api_baseurl = cfg.get("base_url") or "https://ai.t8star.cn//v1"
+            used_api_baseurl = _normalize_baseurl(os.environ.get("COMFYUI_RN_BASE_URL") or cfg.get("base_url") or "https://api.openai.com/v1")
 
         if model and str(model).strip() and str(model) != "default":
             used_model = model
@@ -538,16 +543,15 @@ class RN_Prompt_Translator():
     def _translate_chunk(self, chunk, src_label, dst_label, temperature=None, apiBaseUrl=None, apiKey=None, model=None):
         cfg = get_config()
         
-        # 处理输入回退逻辑: Input -> Env -> Config
         if apiKey and str(apiKey).strip() and str(apiKey) != "default":
             used_api_key = apiKey
         else:
-            used_api_key = cfg.get("api_key", "")
+            used_api_key = os.environ.get("COMFYUI_RN_API_KEY") or cfg.get("api_key", "")
 
         if apiBaseUrl and str(apiBaseUrl).strip() and str(apiBaseUrl) != "default":
-            used_api_baseurl = apiBaseUrl
+            used_api_baseurl = _normalize_baseurl(apiBaseUrl)
         else:
-            used_api_baseurl = cfg.get("base_url") or "https://ai.t8star.cn//v1"
+            used_api_baseurl = _normalize_baseurl(os.environ.get("COMFYUI_RN_BASE_URL") or cfg.get("base_url") or "https://api.openai.com/v1")
 
         if model and str(model).strip() and str(model) != "default":
             used_model = model
@@ -790,8 +794,8 @@ class RN_LLMAPI_Node():
         vllm_cfg = get_vllm_config()
         has_visual = (ref_image is not None) or (video is not None)
         selected_cfg = vllm_cfg if has_visual else cfg
-        used_api_baseurl = (api_baseurl or selected_cfg.get("base_url"))
-        used_api_key = (api_key or selected_cfg.get("api_key") or "")
+        used_api_baseurl = _normalize_baseurl(api_baseurl or os.environ.get("COMFYUI_RN_BASE_URL") or selected_cfg.get("base_url"))
+        used_api_key = (api_key or os.environ.get("COMFYUI_RN_API_KEY") or selected_cfg.get("api_key") or "")
         used_model = (model or selected_cfg.get("model") or ("qwen25-vl-32b-instruct" if has_visual else "gpt-4o-mini"))
         
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
