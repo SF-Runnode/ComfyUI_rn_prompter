@@ -6,6 +6,17 @@ import re
 from PIL import Image
 import numpy as np
 import base64
+from ComfyUI_RN_External_Interface.utils import generate_request_id, log_prepare, log_complete, log_error, ProgressBar
+
+ENV_KEYS_API_KEY = ["COMFYUI_RN_API_KEY", "COMFLY_API_KEY", "RUNNODE_API_KEY", "RN_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"]
+ENV_KEYS_BASE_URL = ["COMFYUI_RN_BASE_URL", "COMFLY_BASE_URL", "RUNNODE_BASE_URL", "RN_BASE_URL", "LLM_API_BASEURL", "OPENAI_BASE_URL", "OPENAI_API_BASE_URL", "DEEPSEEK_API_BASE_URL"]
+
+def get_first_env(names):
+    for n in names:
+        v = os.environ.get(n)
+        if v is not None and str(v).strip() != "":
+            return v
+    return None
 
 def _normalize_baseurl(u):
     if not u:
@@ -182,8 +193,10 @@ def get_model_config(model_name):
                 config_path = path
                 break
         
-        with open(config_path, 'r', encoding='utf-8') as f:  
-            config = json.load(f)
+        config = {}
+        if config_path and os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:  
+                config = json.load(f)
         
         # 模型名称映射字典（前端显示名称 -> 配置中的模型名称）
         mapping = {
@@ -463,19 +476,31 @@ class RN_Translator():
             return f"翻译错误：{str(e)}"
 
     def translate_text(self, prompt, advanced_options, seed=0, apiBaseUrl="default", apiKey="default", model="default"):
-
+        request_id = generate_request_id("translate", "rn_prompter")
+        log_prepare("文本翻译", request_id, "RunNode/Prompter-", "Prompter")
+        rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="文本翻译", source="RunNode/Prompter-")
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
         if not cleaned.strip():
+            rn_pbar.error("错误：请输入要翻译的文本")
             return ("错误：请输入要翻译的文本",)
         src_label, dst_label = self._detect_direction(cleaned, advanced_options)
         chunks = self._split_text_into_chunks(cleaned, max_chunk_size=400)
         if len(chunks) == 1:
             res = self._translate_chunk(chunks[0], src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model)
+            if isinstance(res, str) and (res.startswith("错误：") or res.startswith("翻译错误")):
+                rn_pbar.error(res)
+            else:
+                rn_pbar.done(char_count=len(res or ""))
             return (res,)
         translated = []
         for c in chunks:
             translated.append(self._translate_chunk(c, src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model))
-        return (' '.join(translated),)
+        joined = ' '.join(translated)
+        if joined.startswith("错误：") or joined.startswith("翻译错误"):
+            rn_pbar.error(joined)
+        else:
+            rn_pbar.done(char_count=len(joined))
+        return (joined,)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -608,19 +633,31 @@ class RN_Prompt_Translator():
             return f"翻译错误：{str(e)}"
 
     def translate_text(self, prompt, advanced_options, seed=0, apiBaseUrl="default", apiKey="default", model="default"):
-
+        request_id = generate_request_id("prompt_translate", "rn_prompter")
+        log_prepare("提示词翻译", request_id, "RunNode/Prompter-", "Prompter")
+        rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="提示词翻译", source="RunNode/Prompter-")
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
         if not cleaned.strip():
+            rn_pbar.error("错误：请输入要翻译的文本")
             return ("错误：请输入要翻译的文本",)
         src_label, dst_label = self._detect_direction(cleaned, advanced_options)
         chunks = self._split_text_into_chunks(cleaned, max_chunk_size=400)
         if len(chunks) == 1:
             res = self._translate_chunk(chunks[0], src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model)
+            if isinstance(res, str) and (res.startswith("错误：") or res.startswith("翻译错误")):
+                rn_pbar.error(res)
+            else:
+                rn_pbar.done(char_count=len(res or ""))
             return (res,)
         translated = []
         for c in chunks:
             translated.append(self._translate_chunk(c, src_label, dst_label, temperature=None, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model))
-        return (' '.join(translated),)
+        joined = ' '.join(translated)
+        if joined.startswith("错误：") or joined.startswith("翻译错误"):
+            rn_pbar.error(joined)
+        else:
+            rn_pbar.done(char_count=len(joined))
+        return (joined,)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -743,17 +780,30 @@ class RN_Midjourney_Prompter():
             return f"Error: {str(e)}"
 
     def generate_mj_prompt(self, prompt, seed=0, temperature=0.3, apiBaseUrl="default", apiKey="default", model="default"):
+        request_id = generate_request_id("mj_prompt", "rn_prompter")
+        log_prepare("MJ 提示词", request_id, "RunNode/Prompter-", "Prompter")
+        rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="MJ提示词", source="RunNode/Prompter-")
         cleaned = re.sub(r'[\x00\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', prompt or "")
         if not cleaned.strip():
+            rn_pbar.error("错误：请输入要生成的文本")
             return ("错误：请输入要生成的文本",)
         chunks = self._split_text_into_chunks(cleaned, max_chunk_size=400)
         if len(chunks) == 1:
             res = self._generate_chunk_mj(chunks[0], temperature=temperature, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model)
+            if isinstance(res, str) and (res.startswith("错误：") or res.startswith("Error")):
+                rn_pbar.error(res)
+            else:
+                rn_pbar.done(char_count=len(res or ""))
             return (res,)
         generated = []
         for c in chunks:
             generated.append(self._generate_chunk_mj(c, temperature=temperature, apiBaseUrl=apiBaseUrl, apiKey=apiKey, model=model))
-        return (' '.join(generated),)
+        joined = ' '.join(generated)
+        if joined.startswith("错误：") or joined.startswith("Error"):
+            rn_pbar.error(joined)
+        else:
+            rn_pbar.done(char_count=len(joined))
+        return (joined,)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -790,6 +840,9 @@ class RN_LLMAPI_Node():
 
     def rn_run_llmapi(self, api_baseurl, api_key, model, role, prompt, temperature, seed, 
                       max_video_frames=5, ref_image=None, video=None):
+        request_id = generate_request_id("llmapi", "rn_prompter")
+        log_prepare("通用LLM调用", request_id, "RunNode/Prompter-", "Prompter")
+        rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="LLM调用", source="RunNode/Prompter-")
         cfg = get_config()
         vllm_cfg = get_vllm_config()
         has_visual = (ref_image is not None) or (video is not None)
@@ -817,10 +870,7 @@ class RN_LLMAPI_Node():
         # 处理视频输入
         if video is not None:
             try:
-                # 提取视频帧
                 video_frames = extract_video_frames(video, max_frames=max_video_frames)
-                
-                # 为每个帧添加图像内容
                 for i, frame_base64 in enumerate(video_frames):
                     user_content.append({
                         "type": "image_url",
@@ -829,15 +879,11 @@ class RN_LLMAPI_Node():
                             "detail": "medium"
                         }
                     })
-                
-                # 如果需要，可以在prompt中说明这些是视频帧
                 if len(video_frames) > 1:
                     prompt_addition = f"\nNote: I've provided {len(video_frames)} keyframes from the video. "
                     user_content[0]["text"] = prompt + prompt_addition
-                    
             except Exception as e:
-                print(f"视频处理出错: {str(e)}")
-                # 可以选择返回错误信息或继续处理
+                rn_pbar.error(f"视频处理出错: {str(e)}")
         
         # 构建消息
         messages.append({
@@ -852,15 +898,16 @@ class RN_LLMAPI_Node():
                 temperature=temperature,
                 seed=seed
             )
-            
             if completion is not None and hasattr(completion, 'choices'):
                 response = completion.choices[0].message.content
             else:
                 response = 'Error: No response from API'
-                
         except Exception as e:
             response = f"API调用出错: {str(e)}"
-            
+        if isinstance(response, str) and (response.startswith("Error") or response.startswith("API调用出错")):
+            rn_pbar.error(response)
+        else:
+            rn_pbar.done(char_count=len(response or ""))
         return (response,)
 
 
@@ -908,12 +955,20 @@ class RN_LLMAPI_Pro_Node():
     CATEGORY = "RunNode/rn_prompter"
 
     def rn_run_llmapi_pro(self, model, role, prompt, temperature, seed, api_baseurl='', api_key='', ref_image=None):
+        request_id = generate_request_id("llmapi_pro", "rn_prompter")
+        log_prepare("专业LLM调用", request_id, "RunNode/Prompter-", "Prompter")
+        rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="LLM调用", source="RunNode/Prompter-")
+        
+        # 获取环境变量
+        env_base_url = get_first_env(ENV_KEYS_BASE_URL)
+        env_api_key = get_first_env(ENV_KEYS_API_KEY)
+
         # 获取模型对应的配置
         model_config = get_model_config(model)
         
-        # 优先使用传入的api_baseurl和api_key，如果没有则使用配置文件中的
-        used_api_baseurl = api_baseurl or model_config.get('base_url', '')
-        used_api_key = api_key or model_config.get('api_key', '')
+        # 优先级: 输入参数 > 环境变量 > 模型特定配置 > 全局配置
+        used_api_baseurl = api_baseurl or env_base_url or model_config.get('base_url', '')
+        used_api_key = api_key or env_api_key or model_config.get('api_key', '')
         used_model = model_config.get('model', '')  # 使用配置中的模型名称
         
         # 如果配置中没有模型名称，使用映射后的名称
@@ -950,6 +1005,7 @@ class RN_LLMAPI_Pro_Node():
         if not used_api_baseurl:
             return ("ERROR: No API base URL configured. Please check your configuration.",)
         
+        used_api_baseurl = _normalize_baseurl(used_api_baseurl)
         print(f"Using base_url: {used_api_baseurl}")
         print(f"Using model: {used_model}")
         
@@ -987,14 +1043,63 @@ class RN_LLMAPI_Pro_Node():
                 messages=messages, 
                 temperature=temperature
             )
-            
-            if completion is not None and hasattr(completion, 'choices'):
+            if completion is not None and hasattr(completion, 'choices') and len(completion.choices) > 0:
                 prompt = completion.choices[0].message.content
             else:
-                prompt = 'Error: No response from API'
-                
+                print(f"API Response invalid: {completion}")
+                prompt = 'Error: No response from API (Empty choices)'
         except Exception as e:
-            print(f"API call error: {e}")
-            prompt = f'Error: {str(e)}'
+            error_msg = str(e)
+            print(f"API call error: {error_msg}")
             
+            # 诊断：如果是 JSON 解析错误，尝试获取原始响应内容帮助调试
+            if "Expecting value" in error_msg or "JSON" in error_msg:
+                try:
+                    import urllib.request
+                    import urllib.error
+                    
+                    # 尝试构建完整 URL 进行测试
+                    test_url = used_api_baseurl
+                    if not test_url.endswith('/'):
+                        test_url += '/'
+                    test_url += 'chat/completions'
+                    
+                    print(f"Diagnosing API connection to: {test_url}")
+                    
+                    # 简单的测试请求头
+                    headers = {
+                        "Authorization": f"Bearer {used_api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    # 最小化的测试 Payload
+                    payload = json.dumps({
+                        "model": used_model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 1
+                    }).encode('utf-8')
+                    
+                    req = urllib.request.Request(test_url, data=payload, headers=headers, method='POST')
+                    
+                    try:
+                        with urllib.request.urlopen(req, timeout=10) as response:
+                            print(f"Diagnostic Response Code: {response.getcode()}")
+                            body = response.read().decode('utf-8', errors='ignore')
+                            print(f"Diagnostic Response Body (first 500 chars): {body[:500]}")
+                    except urllib.error.HTTPError as he:
+                        print(f"Diagnostic HTTP Error: {he.code}")
+                        error_body = he.read().decode('utf-8', errors='ignore')
+                        print(f"Diagnostic Error Body: {error_body[:500]}")
+                        error_msg += f" (HTTP {he.code}: {error_body[:200]})"
+                    except Exception as de:
+                        print(f"Diagnostic check failed: {de}")
+                        
+                except Exception as diag_e:
+                    print(f"Failed to run diagnostics: {diag_e}")
+
+            prompt = f'Error: {error_msg}'
+        if isinstance(prompt, str) and prompt.startswith('Error'):
+            rn_pbar.error(prompt)
+        else:
+            rn_pbar.done(char_count=len(prompt or ""))
         return (prompt,)
