@@ -3,13 +3,44 @@ import time
 import json
 import os
 import re
+import torch
 from PIL import Image
 import numpy as np
 import base64
-from ComfyUI_RN_External_Interface.utils import generate_request_id, log_prepare, log_complete, log_error, ProgressBar
+from .utils import generate_request_id, log_prepare, log_complete, log_error, ProgressBar
 
 ENV_KEYS_API_KEY = ["COMFYUI_RN_API_KEY", "COMFLY_API_KEY", "RUNNODE_API_KEY", "RN_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"]
 ENV_KEYS_BASE_URL = ["COMFYUI_RN_BASE_URL", "COMFLY_BASE_URL", "RUNNODE_BASE_URL", "RN_BASE_URL", "LLM_API_BASEURL", "OPENAI_BASE_URL", "OPENAI_API_BASE_URL", "DEEPSEEK_API_BASE_URL"]
+
+MODEL_MAPPING = {
+    "Kimi-K2.5": "moonshotai/Kimi-K2.5",
+    "Kimi-K2-Thinking": "moonshotai/Kimi-K2-Thinking",
+    "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
+    "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
+    "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
+    "Qwen2.5-VL-72B-Instruct": "Qwen/Qwen2.5-VL-72B-Instruct",
+    "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
+    "Qwen3-32B": "Qwen/Qwen3-32B",
+    "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
+    "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
+    "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+    "Qwen3-VL-30B-A3B-Instruct": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+    "QwQ-32B": "Qwen/QwQ-32B",
+    "DeepSeek-R1": "deepseek-ai/DeepSeek-R1",
+    "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+    "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
+    "DeepSeek-V3": "deepseek-ai/DeepSeek-V3",
+    "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
+    "DeepSeek-OCR": "deepseek-ai/DeepSeek-OCR",
+    "GD-DeepSeek-R1": "GD/DeepSeek-R1",
+    "glm-4-9b-chat": "glm-4-9b-chat",
+    "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
+    "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
+    "GLM-4.6": "ZhipuAI/GLM-4.6",
+    "bge-m3": "bge-m3",
+    "bge-reranker-v2-m3": "bge-reranker-v2-m3",
+    "PaddleOCR-VL-0.9B": "PaddleOCR-VL-0.9B",
+}
 
 def get_first_env(names):
     for n in names:
@@ -30,8 +61,8 @@ def _normalize_baseurl(u):
 def get_config():
     try:
         config_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_prompter-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_prompter-config.json')
         ]
 
         config_path = None
@@ -108,8 +139,8 @@ def save_config(config):
 def get_vllm_config():
     try:
         config_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_prompter-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_prompter-config.json')
         ]
 
         config_path = None
@@ -183,8 +214,8 @@ def get_model_config(model_name):
     try:
         # 修改配置文件路径为新的配置文件
         config_paths = [
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_translator-config.json'),
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_translator-config.json')
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'ComfyUI_rn_prompter-config.json'),
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", 'comfyui_rn_prompter-config.json')
         ]
 
         config_path = None
@@ -199,25 +230,7 @@ def get_model_config(model_name):
                 config = json.load(f)
         
         # 模型名称映射字典（前端显示名称 -> 配置中的模型名称）
-        mapping = {
-            "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
-            "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
-            "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
-            "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
-            "Qwen3-32B": "Qwen/Qwen3-32B",
-            "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
-            "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
-            "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-            "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-            "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
-            "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
-            "glm-4-9b-chat": "glm-4-9b-chat",
-            "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
-            "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
-            "GLM-4.6": "ZhipuAI/GLM-4.6",
-            "bge-m3": "bge-m3",
-            "bge-reranker-v2-m3": "bge-reranker-v2-m3",
-        }
+        mapping = MODEL_MAPPING
         
         # 获取映射后的模型名称
         mapped_name = mapping.get(model_name, model_name)
@@ -847,8 +860,13 @@ class RN_LLMAPI_Node():
         vllm_cfg = get_vllm_config()
         has_visual = (ref_image is not None) or (video is not None)
         selected_cfg = vllm_cfg if has_visual else cfg
-        used_api_baseurl = _normalize_baseurl(api_baseurl or os.environ.get("COMFYUI_RN_BASE_URL") or selected_cfg.get("base_url"))
-        used_api_key = (api_key or os.environ.get("COMFYUI_RN_API_KEY") or selected_cfg.get("api_key") or "")
+        
+        # 处理输入回退逻辑：只有当输入不为空（且不全是空格）时才使用输入值
+        used_api_baseurl = api_baseurl if api_baseurl and api_baseurl.strip() else None
+        used_api_key = api_key if api_key and api_key.strip() else None
+        
+        used_api_baseurl = _normalize_baseurl(used_api_baseurl or os.environ.get("COMFYUI_RN_BASE_URL") or selected_cfg.get("base_url"))
+        used_api_key = (used_api_key or os.environ.get("COMFYUI_RN_API_KEY") or selected_cfg.get("api_key") or "")
         used_model = (model or selected_cfg.get("model") or ("qwen25-vl-32b-instruct" if has_visual else "gpt-4o-mini"))
         
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
@@ -919,24 +937,7 @@ class RN_LLMAPI_Pro_Node():
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model": (["Qwen2.5-32B-Instruct",
-                "Qwen2.5-72B-Instruct", 
-                "Qwen2.5-VL-32B-Instruct",
-                "Qwen2.5-Omni-7B", 
-                "Qwen3-32B",
-                "Qwen3-Embedding-8B", 
-                "Qwen3-Reranker-8B",
-                "Qwen3-Coder-480B-A35B-Instruct",
-                "DeepSeek-R1-Distill-Qwen-32B",
-                "DeepSeek-R1-0528",
-                "DeepSeek-V3-0324",
-                "glm-4-9b-chat",
-                "GLM-4-32B-0414",
-                "GLM-4.1V-9B-Thinking",
-                "GLM-4.6",
-                "bge-m3",
-                "bge-reranker-v2-m3",
-                ], {"default": "Qwen2.5-VL-32B-Instruct"}),
+                "model": (list(MODEL_MAPPING.keys()), {"default": "Kimi-K2.5"}),
                 "role": ("STRING", {"multiline": True, "default": "You are a helpful assistant"}),
                 "prompt": ("STRING", {"multiline": True, "default": "Hello"}),
                 "temperature": ("FLOAT", {"default": 0.6}),
@@ -966,40 +967,20 @@ class RN_LLMAPI_Pro_Node():
         # 获取模型对应的配置
         model_config = get_model_config(model)
         
+        # 处理输入回退逻辑：只有当输入不为空（且不全是空格）时才使用输入值
+        used_api_baseurl = api_baseurl if api_baseurl and api_baseurl.strip() else None
+        used_api_key = api_key if api_key and api_key.strip() else None
+        
         # 优先级: 输入参数 > 环境变量 > 模型特定配置 > 全局配置
-        used_api_baseurl = api_baseurl or env_base_url or model_config.get('base_url', '')
-        used_api_key = api_key or env_api_key or model_config.get('api_key', '')
+        used_api_baseurl = used_api_baseurl or env_base_url or model_config.get('base_url', '') or get_config().get('base_url', '')
+        used_api_key = used_api_key or env_api_key or model_config.get('api_key', '') or get_config().get('api_key', '')
         used_model = model_config.get('model', '')  # 使用配置中的模型名称
         
         # 如果配置中没有模型名称，使用映射后的名称
         if not used_model:
             # 模型名称映射字典
-            mapping = {
-                "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct",
-                "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
-                "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
-                "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
-                "Qwen3-32B": "Qwen/Qwen3-32B",
-                "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
-                "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
-                "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-                "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-                "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
-                "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
-                "glm-4-9b-chat": "glm-4-9b-chat",
-                "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
-                "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
-                "GLM-4.6": "ZhipuAI/GLM-4.6",
-                "bge-m3": "bge-m3",
-                "bge-reranker-v2-m3": "bge-reranker-v2-m3",
-            }
+            mapping = MODEL_MAPPING
             used_model = mapping.get(model, model)
-        
-        # 如果base_url或api_key为空，使用默认的get_config作为后备
-        if not used_api_baseurl or not used_api_key:
-            cfg = get_config()
-            used_api_baseurl = used_api_baseurl or cfg.get('base_url', '')
-            used_api_key = used_api_key or cfg.get('api_key', '')
         
         # 最终的检查，确保有base_url
         if not used_api_baseurl:
@@ -1050,6 +1031,11 @@ class RN_LLMAPI_Pro_Node():
                 prompt = 'Error: No response from API (Empty choices)'
         except Exception as e:
             error_msg = str(e)
+            if "not a multimodal model" in error_msg:
+                prompt = f"{used_model}不是多模态模型，无法识别图片，请重新选择模型"
+                rn_pbar.error(prompt)
+                return (prompt,)
+
             print(f"API call error: {error_msg}")
             
             # 诊断：如果是 JSON 解析错误，尝试获取原始响应内容帮助调试

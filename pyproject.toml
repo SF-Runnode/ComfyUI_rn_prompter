@@ -1,0 +1,9 @@
+[project]
+name = "comfyui-rn-prompter"
+description = "RunNode prompter nodes for ComfyUI"
+version = "1.0"
+
+[tool.comfy]
+PublisherId = "SF-Runnode"
+DisplayName = "RunNode Prompter"
+Icon = ""
