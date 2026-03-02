@@ -19,13 +19,9 @@ MODEL_MAPPING = {
     "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct", 
     "Qwen2.5-VL-32B-Instruct": "Qwen/Qwen2.5-VL-32B-Instruct",
     "Qwen2.5-VL-72B-Instruct": "Qwen/Qwen2.5-VL-72B-Instruct",
-    "Qwen2.5-Omni-7B": "Qwen/Qwen2.5-Omni-7B", 
     "Qwen3-32B": "Qwen/Qwen3-32B",
-    "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B", 
-    "Qwen3-Reranker-8B": "Qwen/Qwen3-Reranker-8B",
     "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
     "Qwen3-VL-30B-A3B-Instruct": "Qwen/Qwen3-VL-30B-A3B-Instruct",
-    "QwQ-32B": "Qwen/QwQ-32B",
     "DeepSeek-R1": "deepseek-ai/DeepSeek-R1",
     "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
@@ -36,9 +32,6 @@ MODEL_MAPPING = {
     "glm-4-9b-chat": "glm-4-9b-chat",
     "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
     "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
-    "GLM-4.6": "ZhipuAI/GLM-4.6",
-    "bge-m3": "bge-m3",
-    "bge-reranker-v2-m3": "bge-reranker-v2-m3",
     "PaddleOCR-VL-0.9B": "PaddleOCR-VL-0.9B",
 }
 
