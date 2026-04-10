@@ -297,6 +297,31 @@ def encode_image_b64(ref_image):
     return base64_image
 
 
+def _encode_frame_np_b64(frame_np, max_side=1024):
+    if frame_np is None:
+        return None
+    if hasattr(frame_np, "dtype"):
+        if frame_np.dtype != np.uint8:
+            frame_np = frame_np.astype(np.float32)
+            if frame_np.max() <= 1.0:
+                frame_np = frame_np * 255.0
+            frame_np = np.clip(frame_np, 0, 255).astype(np.uint8)
+    if getattr(frame_np, "ndim", None) == 3:
+        if frame_np.shape[0] in (1, 3, 4) and frame_np.shape[-1] not in (1, 3, 4):
+            frame_np = np.transpose(frame_np, (1, 2, 0))
+    frame_img = Image.fromarray(frame_np)
+    lsize = np.max(frame_img.size)
+    factor = 1
+    while lsize / factor > max_side:
+        factor *= 2
+    if factor > 1:
+        frame_img = frame_img.resize((frame_img.size[0] // factor, frame_img.size[1] // factor))
+    from io import BytesIO
+    buf = BytesIO()
+    frame_img.save(buf, format="WEBP")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 def extract_video_frames(video_tensor, max_frames=20):
     """
     从视频张量中提取关键帧
@@ -329,32 +354,188 @@ def extract_video_frames(video_tensor, max_frames=20):
         else:
             frame_np = frame
             
-        # 确保值在0-255范围
-        if frame_np.max() <= 1.0:
-            frame_np = frame_np * 255.0
-        
-        # 转换为uint8
-        frame_img = Image.fromarray(np.clip(frame_np, 0, 255).astype(np.uint8))
-        
-        # 调整大小（与图片处理保持一致）
-        lsize = np.max(frame_img.size)
-        factor = 1
-        while lsize / factor > 1024:  # 视频帧可以稍小一些
-            factor *= 2
-        if factor > 1:
-            frame_img = frame_img.resize((frame_img.size[0] // factor, frame_img.size[1] // factor))
-        
-        # 保存为临时文件并编码
-        frame_path = f'frame_{time.time()}_{idx}.webp'
-        frame_img.save(frame_path, 'WEBP')
-        
-        with open(frame_path, "rb") as f:
-            frame_base64 = base64.b64encode(f.read()).decode('utf-8')
-        
-        frames.append(frame_base64)
-        os.remove(frame_path)
+        frame_base64 = _encode_frame_np_b64(frame_np, max_side=1024)
+        if frame_base64:
+            frames.append(frame_base64)
     
     return frames
+
+
+def extract_video_frames_from_source(video_source, max_frames=20):
+    if video_source is None:
+        return []
+    if hasattr(video_source, "shape"):
+        try:
+            return extract_video_frames(video_source, max_frames=max_frames)
+        except Exception:
+            pass
+    import io as _io
+    if isinstance(video_source, _io.BytesIO):
+        try:
+            import av
+            video_source.seek(0)
+            with av.open(video_source, mode="r") as container:
+                video_stream = next((s for s in container.streams if s.type == "video"), None)
+                if video_stream is None:
+                    return []
+                total = int(getattr(video_stream, "frames", 0) or 0)
+                indices = None
+                if total > 0:
+                    if total <= max_frames:
+                        indices = set(range(total))
+                    else:
+                        step = total / max_frames
+                        indices = set(int(i * step) for i in range(max_frames))
+                frames = []
+                for i, frame in enumerate(container.decode(video_stream)):
+                    if indices is not None:
+                        if i not in indices:
+                            continue
+                    else:
+                        if max_frames and len(frames) >= max_frames:
+                            break
+                    arr = frame.to_ndarray(format="rgb24")
+                    b64 = _encode_frame_np_b64(arr, max_side=1024)
+                    if b64:
+                        frames.append(b64)
+                return frames
+        except Exception:
+            return []
+
+    if not isinstance(video_source, str):
+        raise TypeError(f"Unsupported video source type: {type(video_source)}")
+    src = video_source.strip()
+    if not src:
+        return []
+
+    import tempfile
+    import urllib.parse
+    import urllib.request
+
+    if src.startswith("file://"):
+        src = urllib.parse.unquote(src[len("file://"):])
+
+    if len(src) >= 3 and src[1] == ":" and (src[2] == "\\" or src[2] == "/"):
+        drive = src[0].lower()
+        rest = src[2:].replace("\\", "/").lstrip("/")
+        src = f"/mnt/{drive}/{rest}"
+
+    local_path = src
+    cleanup_path = None
+    if src.startswith("http://") or src.startswith("https://"):
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        tmp.close()
+        urllib.request.urlretrieve(src, tmp.name)
+        local_path = tmp.name
+        cleanup_path = tmp.name
+    else:
+        if not os.path.exists(local_path):
+            raise FileNotFoundError(f"Video path not found: {local_path}")
+
+    try:
+        try:
+            import cv2
+            cap = cv2.VideoCapture(local_path)
+            if not cap.isOpened():
+                raise RuntimeError("cv2.VideoCapture failed")
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            if total > 0:
+                if total <= max_frames:
+                    indices = list(range(total))
+                else:
+                    step = total / max_frames
+                    indices = [int(i * step) for i in range(max_frames)]
+                frames = []
+                for idx in indices:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                    ok, frame = cap.read()
+                    if not ok or frame is None:
+                        continue
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    b64 = _encode_frame_np_b64(frame, max_side=1024)
+                    if b64:
+                        frames.append(b64)
+                cap.release()
+                return frames
+            frames = []
+            grabbed = 0
+            want = max_frames
+            stride = 1
+            if want > 0:
+                stride = max(1, int(30 / want))
+            idx = 0
+            while grabbed < want:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+                if idx % stride == 0:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    b64 = _encode_frame_np_b64(frame, max_side=1024)
+                    if b64:
+                        frames.append(b64)
+                        grabbed += 1
+                idx += 1
+            cap.release()
+            return frames
+        except Exception:
+            import imageio.v3 as iio
+            frames = []
+            for i, frame in enumerate(iio.imiter(local_path)):
+                if max_frames and len(frames) >= max_frames:
+                    break
+                b64 = _encode_frame_np_b64(frame, max_side=1024)
+                if b64:
+                    frames.append(b64)
+            return frames
+    finally:
+        if cleanup_path:
+            try:
+                os.remove(cleanup_path)
+            except Exception:
+                pass
+
+
+def _get_video_url(video):
+    if video is None:
+        return None
+    stream_source = getattr(video, "get_stream_source", None)
+    if callable(stream_source):
+        try:
+            v = stream_source()
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+            import io as _io
+            if isinstance(v, _io.BytesIO):
+                return v
+        except Exception:
+            pass
+    if isinstance(video, dict):
+        for k in ("video_url", "url", "uri", "path", "file_path", "filepath", "video_path", "filename"):
+            v = video.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    for attr in ("video_url", "url", "uri", "path", "file_path", "filepath", "video_path", "filename"):
+        v = getattr(video, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _get_video_tensor(video):
+    if video is None:
+        return None
+    if isinstance(video, (list, tuple)) and len(video) > 0:
+        video = video[0]
+    if isinstance(video, dict):
+        for k in ("frames", "tensor", "video", "data", "images", "image", "pixels", "frames_tensor", "frame"):
+            v = video.get(k)
+            if v is not None:
+                return v
+    for attr in ("frames", "tensor", "video", "data", "images", "image", "pixels", "frames_tensor", "frame"):
+        v = getattr(video, attr, None)
+        if v is not None:
+            return v
+    return video
 
 
 class RN_Translator():
@@ -881,18 +1062,41 @@ class RN_LLMAPI_Node():
         # 处理视频输入
         if video is not None:
             try:
-                video_frames = extract_video_frames(video, max_frames=max_video_frames)
-                for i, frame_base64 in enumerate(video_frames):
+                video_frames = []
+                get_components = getattr(video, "get_components", None)
+                if callable(get_components):
+                    try:
+                        components = get_components()
+                        images = getattr(components, "images", None)
+                        if images is not None:
+                            video_frames = extract_video_frames(images, max_frames=max_video_frames)
+                    except Exception:
+                        pass
+                if not video_frames:
+                    video_tensor = _get_video_tensor(video)
+                    if hasattr(video_tensor, "shape"):
+                        video_frames = extract_video_frames(video_tensor, max_frames=max_video_frames)
+                if not video_frames:
+                    video_src = _get_video_url(video)
+                    if video_src:
+                        video_frames = extract_video_frames_from_source(video_src, max_frames=max_video_frames)
+                for frame_base64 in video_frames:
                     user_content.append({
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/webp;base64,{frame_base64}",
-                            "detail": "medium"
+                            "detail": "auto"
                         }
                     })
-                if len(video_frames) > 1:
+                if len(video_frames) > 0:
                     prompt_addition = f"\nNote: I've provided {len(video_frames)} keyframes from the video. "
                     user_content[0]["text"] = prompt + prompt_addition
+                else:
+                    video_src = _get_video_url(video)
+                    video_tensor = _get_video_tensor(video)
+                    tensor_shape = getattr(video_tensor, "shape", None)
+                    keys = list(video.keys())[:30] if isinstance(video, dict) else None
+                    rn_pbar.error(f"视频解析失败：未能从 VIDEO 中获得可用帧（type={type(video)} src={video_src} tensor_type={type(video_tensor)} tensor_shape={tensor_shape} keys={keys}）")
             except Exception as e:
                 rn_pbar.error(f"视频处理出错: {str(e)}")
         
@@ -937,9 +1141,17 @@ class RN_LLMAPI_Pro_Node():
                 "seed": ("INT", {"default": -1}),
             },
             "optional": {
-                "ref_image": ("IMAGE",),
-                "api_baseurl": ("STRING", {"multiline": True, "default": ""}),
-                "api_key": ("STRING", {"multiline": True, "default": ""}),
+                "ref_image1": ("IMAGE",),
+                "ref_image2": ("IMAGE",),
+                "ref_image3": ("IMAGE",),
+                "ref_image4": ("IMAGE",),
+                "ref_image5": ("IMAGE",),
+                "ref_image6": ("IMAGE",),
+                "ref_image7": ("IMAGE",),
+                "ref_image8": ("IMAGE",),
+                "ref_image9": ("IMAGE",),
+                "video": ("VIDEO",),
+                "max_video_frames": ("INT", {"default": 5, "min": 1, "max": 20, "step": 1}),
             }
         }
 
@@ -948,7 +1160,27 @@ class RN_LLMAPI_Pro_Node():
     FUNCTION = "rn_run_llmapi_pro"
     CATEGORY = "RunNode/rn_prompter"
 
-    def rn_run_llmapi_pro(self, model, role, prompt, temperature, seed, api_baseurl='', api_key='', ref_image=None):
+    def rn_run_llmapi_pro(
+        self,
+        model,
+        role,
+        prompt,
+        temperature,
+        seed,
+        api_baseurl='',
+        api_key='',
+        ref_image1=None,
+        ref_image2=None,
+        ref_image3=None,
+        ref_image4=None,
+        ref_image5=None,
+        ref_image6=None,
+        ref_image7=None,
+        ref_image8=None,
+        ref_image9=None,
+        video=None,
+        max_video_frames=5,
+    ):
         request_id = generate_request_id("llmapi_pro", "rn_prompter")
         log_prepare("专业LLM调用", request_id, "RunNode/Prompter-", "Prompter")
         rn_pbar = ProgressBar(request_id, "Prompter", streaming=True, task_type="LLM调用", source="RunNode/Prompter-")
@@ -985,29 +1217,94 @@ class RN_LLMAPI_Pro_Node():
         
         client = OpenAI(api_key=used_api_key, base_url=used_api_baseurl)
         
-        # 处理消息（保持原有的图片处理逻辑不变）
-        if ref_image is None:
+        images_in = [ref_image1, ref_image2, ref_image3, ref_image4, ref_image5, ref_image6, ref_image7, ref_image8, ref_image9]
+        image_batches = [img for img in images_in if img is not None]
+        has_visual = bool(image_batches) or (video is not None)
+
+        if not has_visual:
             messages = [
                 {'role': 'system', 'content': f'{role}'},
                 {'role': 'user', 'content': f'{prompt}'},
             ]
         else:
-            base64_image = encode_image_b64(ref_image)
-            messages = [
-                {'role': 'system', 'content': f'{role}'},
-                {'role': 'user', 
-                 'content': [
-                        {
-                            "type": "text",
-                            "text": f"{prompt}"
-                        },
-                        {
+            user_content = [{"type": "text", "text": f"{prompt}"}]
+
+            max_images = 9
+            added_images = 0
+            for img in image_batches:
+                if added_images >= max_images:
+                    break
+                try:
+                    batch_size = int(getattr(img, "shape", [0])[0]) if getattr(img, "shape", None) is not None else 0
+                except Exception:
+                    batch_size = 0
+                if batch_size <= 1:
+                    base64_image = encode_image_b64(img)
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/webp;base64,{base64_image}",
+                            "detail": "high"
+                        }
+                    })
+                    added_images += 1
+                else:
+                    for i in range(batch_size):
+                        if added_images >= max_images:
+                            break
+                        base64_image = encode_image_b64(img[i:i+1])
+                        user_content.append({
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
+                                "url": f"data:image/webp;base64,{base64_image}",
+                                "detail": "high"
                             }
-                        },
-                    ]},
+                        })
+                        added_images += 1
+
+            if video is not None:
+                try:
+                    video_frames = []
+                    get_components = getattr(video, "get_components", None)
+                    if callable(get_components):
+                        try:
+                            components = get_components()
+                            images = getattr(components, "images", None)
+                            if images is not None:
+                                video_frames = extract_video_frames(images, max_frames=max_video_frames)
+                        except Exception:
+                            pass
+                    if not video_frames:
+                        video_tensor = _get_video_tensor(video)
+                        if hasattr(video_tensor, "shape"):
+                            video_frames = extract_video_frames(video_tensor, max_frames=max_video_frames)
+                    if not video_frames:
+                        video_src = _get_video_url(video)
+                        if video_src:
+                            video_frames = extract_video_frames_from_source(video_src, max_frames=max_video_frames)
+                    for frame_base64 in video_frames:
+                        user_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/webp;base64,{frame_base64}",
+                                "detail": "low"
+                            }
+                        })
+                    if len(video_frames) > 0:
+                        prompt_addition = f"\nNote: I've provided {len(video_frames)} keyframes from the video. "
+                        user_content[0]["text"] = prompt + prompt_addition
+                    else:
+                        video_src = _get_video_url(video)
+                        video_tensor = _get_video_tensor(video)
+                        tensor_shape = getattr(video_tensor, "shape", None)
+                        keys = list(video.keys())[:30] if isinstance(video, dict) else None
+                        rn_pbar.error(f"视频解析失败：未能从 VIDEO 中获得可用帧（type={type(video)} src={video_src} tensor_type={type(video_tensor)} tensor_shape={tensor_shape} keys={keys}）")
+                except Exception as e:
+                    rn_pbar.error(f"视频处理出错: {str(e)}")
+
+            messages = [
+                {'role': 'system', 'content': f'{role}'},
+                {'role': 'user', 'content': user_content},
             ]
         
         # 调用API
