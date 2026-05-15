@@ -22,6 +22,8 @@ MODEL_MAPPING = {
     "Qwen3-32B": "Qwen/Qwen3-32B",
     "Qwen3-Coder-480B-A35B-Instruct": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
     "Qwen3-VL-30B-A3B-Instruct": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+    "DeepSeek-V4-Pro": "deepseek-ai/DeepSeek-V4-Pro",
+    "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash",
     "DeepSeek-R1": "deepseek-ai/DeepSeek-R1",
     "DeepSeek-R1-Distill-Qwen-32B": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "DeepSeek-R1-0528": "deepseek-ai/DeepSeek-R1-0528",
@@ -29,10 +31,14 @@ MODEL_MAPPING = {
     "DeepSeek-V3-0324": "deepseek-ai/DeepSeek-V3-0324",
     "DeepSeek-OCR": "deepseek-ai/DeepSeek-OCR",
     "GD-DeepSeek-R1": "GD/DeepSeek-R1",
+    "GLM-5-Turbo": "GLM-5-Turbo",
+    "GLM-5.1": "GLM-5.1",
     "glm-4-9b-chat": "glm-4-9b-chat",
     "GLM-4-32B-0414": "ZhipuAI/GLM-4-32B-0414",
     "GLM-4.1V-9B-Thinking": "ZhipuAI/GLM-4.1V-9B-Thinking",
     "PaddleOCR-VL-0.9B": "PaddleOCR-VL-0.9B",
+    "MiniMax-M2.7": "MiniMax-M2.7",
+    "MiniMax-M2.7-highspeed": "MiniMax-M2.7-highspeed"
 }
 
 def get_first_env(names):
